@@ -1,4 +1,4 @@
-// Radar-2: the token radar's model. One sealed snapshot in, one ranked board out.
+// Radar-3: the token radar's model. One sealed snapshot in, one ranked board out.
 //
 // The board is every protocol that passes the watchlist's own rule: the 40 watchlist slugs, plus
 // every other pre-token protocol below the $50M floor that is not a wrapped, staked or bridged
@@ -16,10 +16,14 @@
 //               token scores twice the multiple of a newborn one
 //   reach     = 1 + 0.05 x min(chains, 8) — a protocol live on many chains has more users, more
 //               surface for an airdrop and more reason to survive
-//   implied   = max(1, round(base x growthMul x maturity x reach))
+//   category  = the multiplier for the protocol's category family, 0.90 to 1.25 — fee venues
+//               score highest, infrastructure lowest, an unclassified category is neutral at 1.00
+//   implied   = max(1, round(base x growthMul x maturity x reach x category))
 //
 // Every factor is a snapshot figure. The dashboard states the formula and recomputes each row, so
 // the judge can check any number on the board against the figures it came from.
+
+import { categoryMultiplier, categoryNote } from './categories.ts';
 
 /** One protocol as the sealed snapshot carries it: exactly ten fields. */
 export interface SnapshotProtocol {
@@ -72,7 +76,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-2';
+export const MODEL_VERSION = 'radar-3';
 
 /** How many live-token protocols the Live view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -106,6 +110,8 @@ export interface BoardRow {
     growth_multiplier: number;
     maturity_multiplier: number;
     reach_multiplier: number;
+    category_multiplier: number;
+    category_note: string;
     age_days: number | null;
   };
   farm_steps: string[];
@@ -128,6 +134,8 @@ export interface RadarRow {
   growth_multiplier: number;
   maturity_multiplier: number;
   reach_multiplier: number;
+  category_multiplier: number;
+  category_note: string;
 }
 
 /** A live-token protocol: it already trades, so the board shows the market's value, not a model. */
@@ -187,10 +195,12 @@ export interface Scored {
   growthMult: number;
   maturityMult: number;
   reachMult: number;
+  categoryMult: number;
+  categoryNote: string;
   age: number | null;
 }
 
-/** The four factors and the implied value one protocol gets under `model`. */
+/** The five factors and the implied value one protocol gets under `model`. */
 export function impliedValue(p: SnapshotProtocol, asOf: string, model: ModelConstants): Scored {
   const age = ageDays(asOf, p.listed_at);
   const rawGrowth = finite(p.change_7d, 0);
@@ -201,9 +211,11 @@ export function impliedValue(p: SnapshotProtocol, asOf: string, model: ModelCons
     model.maturity_floor +
     (Math.min(Math.max(ageForModel, 0), model.maturity_days) / model.maturity_days) * model.maturity_range;
   const reachMult = 1 + model.reach_per_chain * Math.min(p.chains.length, model.reach_max_chains);
+  const categoryMult = categoryMultiplier(p.category);
+  const categoryNoteText = categoryNote(p.category);
   const base = p.tvl_usd * model.base_multiple;
-  const implied = Math.max(1, Math.round(base * growthMult * maturityMult * reachMult));
-  return { implied, base, growthPct, growthMult, maturityMult, reachMult, age };
+  const implied = Math.max(1, Math.round(base * growthMult * maturityMult * reachMult * categoryMult));
+  return { implied, base, growthPct, growthMult, maturityMult, reachMult, categoryMult, categoryNote: categoryNoteText, age };
 }
 
 /** DefiLlama's version-marker rule: a name ending in a release is a pool of another protocol. */
@@ -293,6 +305,8 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
       growth_multiplier: round4(s.s.growthMult),
       maturity_multiplier: round4(s.s.maturityMult),
       reach_multiplier: round4(s.s.reachMult),
+      category_multiplier: round4(s.s.categoryMult),
+      category_note: s.s.categoryNote,
       age_days: s.s.age,
     },
     farm_steps: farmSteps(s.p, s.s.age).map(stepText),
@@ -439,6 +453,8 @@ export function radarRow(row: BoardRow): RadarRow {
     growth_multiplier: row.model.growth_multiplier,
     maturity_multiplier: row.model.maturity_multiplier,
     reach_multiplier: row.model.reach_multiplier,
+    category_multiplier: row.model.category_multiplier,
+    category_note: row.model.category_note,
   };
 }
 
