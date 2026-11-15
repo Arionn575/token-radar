@@ -1,4 +1,4 @@
-// Token Radar, radar-2: read the sealed snapshot, score every pre-token protocol that passes
+// Token Radar, radar-3: read the sealed snapshot, score every pre-token protocol that passes
 // the watchlist's own rule, and write the ranked board plus the dashboard the judge reads.
 //
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input <snapshot.json|directory>
