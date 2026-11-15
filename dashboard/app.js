@@ -1,4 +1,4 @@
-// Token Radar's dashboard, radar-2. Reads window.RADAR (written beside dashboard/ by main.ts)
+// Token Radar's dashboard, radar-3. Reads window.RADAR (written beside dashboard/ by main.ts)
 // and renders the ranked board, filters, a per-protocol detail view with the model's own
 // breakdown, and a sandbox that recomputes every row live. No network: every byte shown is
 // already in data.js.
@@ -40,7 +40,8 @@
     var age = row.age_days === null || row.age_days === undefined ? model.unknown_age_days : row.age_days;
     var maturity = model.maturity_floor + (Math.min(Math.max(age, 0), model.maturity_days) / model.maturity_days) * model.maturity_range;
     var reach = 1 + model.reach_per_chain * Math.min((row.chains || []).length, model.reach_max_chains);
-    return Math.max(1, Math.round(row.tvl_usd * model.base_multiple * growthMult * maturity * reach));
+    var cat = categoryOf(row);
+    return Math.max(1, Math.round(row.tvl_usd * model.base_multiple * growthMult * maturity * reach * cat));
   }
   function factorsOf(row, model) {
     var growth = Math.min(model.growth_cap, Math.max(model.growth_floor, row.change_7d === null || row.change_7d === undefined ? 0 : row.change_7d));
@@ -50,8 +51,17 @@
       growthMult: 1 + (growth / 100) * model.growth_weight,
       maturity: model.maturity_floor + (Math.min(Math.max(age, 0), model.maturity_days) / model.maturity_days) * model.maturity_range,
       reach: 1 + model.reach_per_chain * Math.min((row.chains || []).length, model.reach_max_chains),
+      category: categoryOf(row),
+      categoryNote: row.category_note || 'No category story: the other factors decide this protocol.',
       age: age
     };
+  }
+
+  // The category multiplier main.ts computed for this row, carried in data.js. It is not a
+  // sandbox constant, so the page never recomputes it — it applies the carried value, and
+  // the sandbox only retunes the four tunable constants around it.
+  function categoryOf(row) {
+    return row.category_multiplier === null || row.category_multiplier === undefined ? 1 : row.category_multiplier;
   }
 
   function el(tag, attrs) {
@@ -126,6 +136,42 @@
       { text: "Before you withdraw, open " + p.name + "'s own points or rewards page and claim only from the link it publishes.", cost: 'no fee to check, and never pay to claim', time: '10 minutes' },
       { text: 'Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.', cost: 'nothing but the log', time: '5 minutes' }
     ].map(stepText);
+  }
+
+  // Export the rows on screen as a CSV: the same rows, in the same order, with the same
+  // values the table shows. The button lives in index.html; this page wires it up below.
+  // One cell, quoted only when it must be: a comma, a quote or a newline inside it.
+  function csvCell(value) {
+    var s = value === null || value === undefined ? '' : String(value);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function csvText() {
+    var list = sortedRows(visibleRows());
+    var lines = ['rank,name,category,chains,tvl_usd,change_7d,age_days,implied_value_usd'];
+    list.forEach(function (r) {
+      lines.push([
+        r.rank,
+        csvCell(r.name),
+        csvCell(r.category || 'Other'),
+        csvCell((r.chains || []).join('; ')),
+        r.tvl_usd,
+        r.change_7d === null ? '' : r.change_7d,
+        r.age_days === null ? '' : r.age_days,
+        r.display_value
+      ].join(','));
+    });
+    return lines.join('\n') + '\n';
+  }
+  function downloadCsv() {
+    var blob = new Blob([csvText()], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'token-radar-board.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
 
   function readHash() {
@@ -328,7 +374,7 @@
     var m = baseModel;
     var sandboxOn = state.sandbox !== null;
     var formula = el('div', { class: 'formula' },
-      'implied = round( tvl_usd x ' + m.base_multiple + ' x (1 + clamp(change_7d, ' + m.growth_floor + ', ' + m.growth_cap + ') / 100 x ' + m.growth_weight + ') x (' + m.maturity_floor + ' + min(age_days, ' + m.maturity_days + ') / ' + m.maturity_days + ' x ' + m.maturity_range + ') x (1 + ' + m.reach_per_chain + ' x min(chains, ' + m.reach_max_chains + ')) )'
+      'implied = round( tvl_usd x ' + m.base_multiple + ' x (1 + clamp(change_7d, ' + m.growth_floor + ', ' + m.growth_cap + ') / 100 x ' + m.growth_weight + ') x (' + m.maturity_floor + ' + min(age_days, ' + m.maturity_days + ') / ' + m.maturity_days + ' x ' + m.maturity_range + ') x (1 + ' + m.reach_per_chain + ' x min(chains, ' + m.reach_max_chains + ')) x category(category) )'
     );
     function slider(id, label, min, max, step, value, key) {
       var out = el('output', { for: id, text: String(value) });
@@ -355,7 +401,7 @@
     var reset = sandboxOn ? el('button', { class: 'button', type: 'button', text: 'Reset to the submitted model', onclick: function () { state.sandbox = null; render(); } }) : null;
     return el('section', { class: 'panel model' },
       el('h2', { text: 'How implied value is computed' }),
-      el('p', { class: 'sub', text: 'Every row is scored by one function of the snapshot figures. No protocol name is special-cased, and no row is hand-picked. Age is the time since the protocol was first listed, the best record of how long it has run with no token; an unlisted age uses ' + m.unknown_age_days + ' days. Reach counts the chains a protocol runs on, capped at ' + m.reach_max_chains + '.' }),
+      el('p', { class: 'sub', text: 'Every row is scored by one function of the snapshot figures. No protocol name is special-cased, and no row is hand-picked. Age is the time since the protocol was first listed, the best record of how long it has run with no token; an unlisted age uses ' + m.unknown_age_days + ' days. Reach counts the chains a protocol runs on, capped at ' + m.reach_max_chains + '. Category adds a small multiplier, 0.90 to 1.25, for the family the protocol\u2019s own category falls in: fee venues score highest, infrastructure lowest, and an unclassified category is neutral at 1.00. The sandbox below retunes the three constants you can move; the category multiplier is fixed, so it never changes here.' }),
       formula,
       sandbox,
       note,
@@ -394,8 +440,10 @@
         el('div', null, el('span', { text: 'Age with no token' }), el('b', { class: 'num', text: fmtAge(row.age_days) })),
         el('div', null, el('span', { text: 'Maturity multiplier' }), el('b', { class: 'num', text: String(Math.round(f.maturity * 1e4) / 1e4) })),
         el('div', null, el('span', { text: 'Chains (' + (row.chains || []).length + ')' }), el('b', { class: 'num', text: String(Math.round(f.reach * 1e4) / 1e4) + 'x reach' })),
+        el('div', null, el('span', { text: 'Category (' + (row.category || 'Other') + ')' }), el('b', { class: 'num', text: String(Math.round(f.category * 1e4) / 1e4) + 'x' })),
         el('div', null, el('span', { text: 'Implied value' }), el('b', { class: 'num', text: fmtUsd(recomputed) }))
       ),
+      el('p', { class: 'sub', text: f.categoryNote }),
       el('p', { class: 'sub', text: 'Model ' + DATA.model_version + ': the same function scores every protocol. The page recomputes this row as ' + fmtUsd(recomputed) + (recomputed === row.implied_value_usd ? ', the same number board.json carries.' : ', which differs from the board: the sandbox is on, or the data is stale.') + ' This is an estimate, not a price.' })
     ));
     dialog.appendChild(el('section', { class: 'detail-section' },
@@ -430,6 +478,8 @@
 
   readHash();
   render();
+  var csvButton = document.getElementById('csv-export');
+  if (csvButton) csvButton.addEventListener('click', downloadCsv);
   window.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && dialog.open) dialog.close();
   });

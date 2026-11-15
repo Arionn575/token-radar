@@ -1,4 +1,4 @@
-/* Token Radar, radar-2 theme: a dark scope face, one amber sweep, monospace numbers.
+/* Token Radar, radar-3 theme: a dark scope face, one amber sweep, monospace numbers.
    Five palette values, two radii, two families — everything else is spacing and a hairline. */
 :root {
   --canvas: #0b1220;
@@ -34,6 +34,8 @@ a { color: var(--accent); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .shell { max-width: 1320px; margin: 0 auto; padding: var(--s5) var(--s6) var(--s7); }
+.toolbar { max-width: 1320px; margin: 0 auto; padding: var(--s4) var(--s6) 0; display: flex; align-items: center; gap: var(--s3); }
+.toolbar .sub { color: var(--muted); font-size: 12px; }
 .top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s5); padding-bottom: var(--s4); border-bottom: 1px solid var(--border); }
 .brand { display: flex; align-items: center; gap: var(--s3); }
 .mark { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px rgba(245, 184, 61, 0.18); flex: none; }
